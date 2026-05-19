@@ -29,7 +29,7 @@ export default function ManualForm({ onSave, onCancel }) {
 
   function handleSubmit(e) {
     e.preventDefault();
-    onSave({ ...form, id: Math.random().toString(36).slice(2) });
+    onSave({ ...form, id: crypto.randomUUID() });
     setForm(empty);
   }
 

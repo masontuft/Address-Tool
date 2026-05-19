@@ -48,7 +48,7 @@ export function mapRow(row) {
   if (street && line2) street = `${street}, ${line2}`;
 
   return {
-    id: Math.random().toString(36).slice(2),
+    id: crypto.randomUUID(),
     name,
     street,
     city: get("city"),
