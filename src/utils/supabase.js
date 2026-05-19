@@ -34,3 +34,20 @@ export async function deleteAddresses(ids) {
   const { error } = await supabase.from(TABLE).delete().in("id", ids);
   if (error) throw error;
 }
+
+export async function updateAddress(entry) {
+  const { id, name, street, city, state, zip, country, label } = entry;
+  const { error } = await supabase
+    .from(TABLE)
+    .update({ name, street, city, state, zip, country, label })
+    .eq("id", id);
+  if (error) throw error;
+}
+
+export async function upsertAllAddresses(entries) {
+  const rows = entries.map(({ id, name, street, city, state, zip, country, label }) => ({
+    id, name, street, city, state, zip, country, label,
+  }));
+  const { error } = await supabase.from(TABLE).upsert(rows, { onConflict: "id" });
+  if (error) throw error;
+}

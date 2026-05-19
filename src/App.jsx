@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { parseCSVText, mapRow } from "./utils/csvParser";
 import { findAllDuplicates } from "./utils/duplicates";
-import { loadAddresses, insertAddresses, deleteAddress, deleteAddresses } from "./utils/supabase";
+import { loadAddresses, insertAddresses, deleteAddress, deleteAddresses, updateAddress, upsertAllAddresses } from "./utils/supabase";
 import AddressCard from "./components/AddressCard";
 import DuplicateModal from "./components/DuplicateModal";
 import ManualForm from "./components/ManualForm";
@@ -30,6 +30,8 @@ export default function App() {
   const [manualOpen, setManualOpen] = useState(false);
   const [conflicts, setConflicts] = useState(null);
   const [error, setError] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [savedMsg, setSavedMsg] = useState(false);
   // pendingRef stores the combined list and which ids are newly incoming (not yet in DB)
   const pendingRef = useRef({ allAddresses: [], incomingIds: new Set() });
 
@@ -54,7 +56,7 @@ export default function App() {
     }
   }
 
-  function processIncoming(incoming) {
+  async function processIncoming(incoming) {
     const combined = [...addresses, ...incoming];
     const dups = findAllDuplicates(combined);
     if (dups.length > 0) {
@@ -65,7 +67,20 @@ export default function App() {
       setConflicts(dups);
     } else {
       setAddresses(combined);
-      insertAddresses(incoming).catch(err => setError("Save failed: " + err.message));
+      try {
+        await insertAddresses(incoming);
+      } catch (err) {
+        setError("Save failed: " + err.message);
+      }
+    }
+  }
+
+  async function handleUpdate(entry) {
+    setAddresses(prev => prev.map(a => a.id === entry.id ? entry : a));
+    try {
+      await updateAddress(entry);
+    } catch (err) {
+      setError("Update failed: " + err.message);
     }
   }
 
@@ -188,6 +203,20 @@ export default function App() {
     a.click();
   }
 
+  async function handleSaveAll() {
+    if (!addresses.length) return;
+    setSaving(true);
+    try {
+      await upsertAllAddresses(addresses);
+      setSavedMsg(true);
+      setTimeout(() => setSavedMsg(false), 2000);
+    } catch (err) {
+      setError("Save all failed: " + err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   function handleManualSave(entry) {
     processIncoming([entry]);
     setManualOpen(false);
@@ -266,6 +295,15 @@ export default function App() {
         {addresses.length > 0 && (
           <button onClick={handleExport} style={btnStyle("#888")}>Export CSV</button>
         )}
+        {addresses.length > 0 && (
+          <button
+            onClick={handleSaveAll}
+            disabled={saving}
+            style={btnStyle(savedMsg ? "#4caf6e" : "#e67e22")}
+          >
+            {saving ? "Saving…" : savedMsg ? "Saved ✓" : "Save All"}
+          </button>
+        )}
       </div>
 
       {manualOpen && (
@@ -286,6 +324,7 @@ export default function App() {
             key={entry.id}
             entry={entry}
             onDelete={handleDelete}
+            onUpdate={handleUpdate}
           />
         ))}
       </div>
