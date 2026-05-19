@@ -133,13 +133,8 @@ export default function AddressCard({ entry, onDelete, onUpdate }) {
     { label: "Country", value: entry.country },
   ].filter(f => f.value);
 
-  const singleLine = [entry.street, entry.city, entry.state, entry.zip, entry.country]
-    .filter(Boolean)
-    .join(", ");
-
   const multiLine = [
     entry.name,
-    entry.label,
     entry.street,
     [entry.city, entry.state, entry.zip].filter(Boolean).join(", "),
     entry.country,
@@ -201,7 +196,7 @@ export default function AddressCard({ entry, onDelete, onUpdate }) {
         <pre style={{ margin: 0, fontFamily: "inherit", fontSize: 13, whiteSpace: "pre-wrap", lineHeight: 1.6, color: "#444" }}>
           {multiLine}
         </pre>
-        <CopyBtn text={singleLine} style={{ marginTop: 2, flexShrink: 0 }} />
+        <CopyBtn text={multiLine} style={{ marginTop: 2, flexShrink: 0 }} />
       </div>
     </div>
   );
