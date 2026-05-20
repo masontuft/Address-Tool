@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { parseCSVText, mapRow } from "./utils/csvParser";
-import { findAllDuplicates } from "./utils/duplicates";
+import { findAllDuplicates, isExactMatch } from "./utils/duplicates";
 import { loadAddresses, insertAddresses, deleteAddress, deleteAddresses, updateAddress, upsertAllAddresses } from "./utils/supabase";
 import AddressCard from "./components/AddressCard";
 import DuplicateModal from "./components/DuplicateModal";
@@ -59,16 +59,25 @@ export default function App() {
   async function processIncoming(incoming) {
     const combined = [...addresses, ...incoming];
     const dups = findAllDuplicates(combined);
-    if (dups.length > 0) {
+
+    // Auto-remove the incoming entry for any exact match — no user input needed
+    const autoRemove = new Set(
+      dups.filter(d => isExactMatch(d.existing, d.incoming)).map(d => d.incoming.id)
+    );
+    const manualDups = dups.filter(d => !isExactMatch(d.existing, d.incoming));
+    const filteredCombined = combined.filter(a => !autoRemove.has(a.id));
+    const filteredIncoming = incoming.filter(a => !autoRemove.has(a.id));
+
+    if (manualDups.length > 0) {
       pendingRef.current = {
-        allAddresses: combined,
-        incomingIds: new Set(incoming.map(e => e.id)),
+        allAddresses: filteredCombined,
+        incomingIds: new Set(filteredIncoming.map(e => e.id)),
       };
-      setConflicts(dups);
+      setConflicts(manualDups);
     } else {
-      setAddresses(combined);
+      setAddresses(filteredCombined);
       try {
-        await insertAddresses(incoming);
+        await insertAddresses(filteredIncoming);
       } catch (err) {
         setError("Save failed: " + err.message);
       }

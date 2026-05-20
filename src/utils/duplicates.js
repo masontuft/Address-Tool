@@ -9,6 +9,11 @@ export function isSameAddress(a, b) {
   return norm(a.name) === norm(b.name) || norm(a.zip) === norm(b.zip);
 }
 
+export function isExactMatch(a, b) {
+  return ["name", "street", "city", "state", "zip", "country", "label"]
+    .every(field => norm(a[field]) === norm(b[field]));
+}
+
 export function findAllDuplicates(entries) {
   const conflicts = [];
   for (let i = 0; i < entries.length; i++) {
