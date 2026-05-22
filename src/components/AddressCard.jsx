@@ -31,6 +31,25 @@ function CopyBtn({ text, label = "Copy", style = {} }) {
   );
 }
 
+const BADGE = {
+  valid:   { icon: "✓", label: "Valid",      color: "#4caf6e", bg: "#e8f5e9" },
+  warning: { icon: "⚠", label: "Partial",    color: "#e67e22", bg: "#fef3e2" },
+  invalid: { icon: "✗", label: "Not found",  color: "#e74c3c", bg: "#fdf0f0" },
+};
+
+function VerifiedBadge({ status }) {
+  if (!status || status === "unverified") return null;
+  const b = BADGE[status] || BADGE.invalid;
+  return (
+    <span title={b.label} style={{
+      fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 12,
+      background: b.bg, color: b.color, display: "inline-flex", alignItems: "center", gap: 3,
+    }}>
+      {b.icon} {b.label}
+    </span>
+  );
+}
+
 const inputStyle = {
   width: "100%",
   padding: "6px 9px",
@@ -41,7 +60,7 @@ const inputStyle = {
   outline: "none",
 };
 
-export default function AddressCard({ entry, onDelete, onUpdate }) {
+export default function AddressCard({ entry, onDelete, onUpdate, onVerify, onPatch, verifying }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({});
 
@@ -150,9 +169,23 @@ export default function AddressCard({ entry, onDelete, onUpdate }) {
           <div>
             <div style={{ fontWeight: 700, fontSize: 16 }}>{entry.name}</div>
             {entry.label && <div style={{ fontSize: 13, color: "#888" }}>{entry.label}</div>}
+            <VerifiedBadge status={entry.verified} />
           </div>
         </div>
-        <div style={{ display: "flex", gap: 4 }}>
+        <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+          <button
+            onClick={() => onVerify(entry.id)}
+            disabled={verifying}
+            title="Verify address with Google Maps"
+            style={{
+              padding: "3px 10px", fontSize: 11, fontWeight: 600, borderRadius: 6,
+              border: "1px solid #ddd", background: verifying ? "#f0f0f0" : "#f5f5f5",
+              cursor: verifying ? "default" : "pointer", color: verifying ? "#aaa" : "#555",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {verifying ? "Verifying…" : "Verify"}
+          </button>
           <button
             onClick={startEdit}
             title="Edit"
@@ -198,6 +231,30 @@ export default function AddressCard({ entry, onDelete, onUpdate }) {
         </pre>
         <CopyBtn text={multiLine} style={{ marginTop: 2, flexShrink: 0 }} />
       </div>
+
+      {entry.corrected_fields && (
+        <div style={{
+          background: "#fff9e6", border: "1px solid #f5d87a", borderRadius: 8,
+          padding: "10px 14px", marginTop: 10, fontSize: 13,
+        }}>
+          <div style={{ color: "#888", fontSize: 12, marginBottom: 4 }}>Google suggests:</div>
+          <div style={{ fontWeight: 500, color: "#444", marginBottom: 8 }}>{entry.formatted_address}</div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              onClick={() => onPatch(entry.id, { ...entry.corrected_fields, corrected_fields: null })}
+              style={{ padding: "4px 12px", borderRadius: 6, border: "none", background: "#4f8ef7", color: "#fff", cursor: "pointer", fontSize: 12, fontWeight: 600 }}
+            >
+              Apply
+            </button>
+            <button
+              onClick={() => onPatch(entry.id, { corrected_fields: null })}
+              style={{ padding: "4px 12px", borderRadius: 6, border: "1px solid #ddd", background: "#fff", cursor: "pointer", fontSize: 12 }}
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

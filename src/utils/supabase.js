@@ -35,12 +35,8 @@ export async function deleteAddresses(ids) {
   if (error) throw error;
 }
 
-export async function updateAddress(entry) {
-  const { id, name, street, city, state, zip, country, label } = entry;
-  const { error } = await supabase
-    .from(TABLE)
-    .update({ name, street, city, state, zip, country, label })
-    .eq("id", id);
+export async function updateAddress(id, fields) {
+  const { error } = await supabase.from(TABLE).update(fields).eq("id", id);
   if (error) throw error;
 }
 

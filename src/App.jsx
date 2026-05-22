@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { parseCSVText, mapRow } from "./utils/csvParser";
 import { findAllDuplicates, isExactMatch } from "./utils/duplicates";
 import { loadAddresses, insertAddresses, deleteAddress, deleteAddresses, updateAddress, upsertAllAddresses } from "./utils/supabase";
+import { verifyAddress } from "./utils/addressVerification";
 import AddressCard from "./components/AddressCard";
 import DuplicateModal from "./components/DuplicateModal";
 import ManualForm from "./components/ManualForm";
@@ -32,6 +33,8 @@ export default function App() {
   const [error, setError] = useState(null);
   const [saving, setSaving] = useState(false);
   const [savedMsg, setSavedMsg] = useState(false);
+  const [verifyingIds, setVerifyingIds] = useState(new Set());
+  const [verifyingAll, setVerifyingAll] = useState(false);
   // pendingRef stores the combined list and which ids are newly incoming (not yet in DB)
   const pendingRef = useRef({ allAddresses: [], incomingIds: new Set() });
 
@@ -84,12 +87,62 @@ export default function App() {
     }
   }
 
+  function fieldsDiffer(entry, corrected) {
+    if (!corrected) return false;
+    const norm = s => (s || "").toLowerCase().replace(/\s+/g, " ").trim();
+    return ["street", "city", "state", "zip", "country"].some(
+      f => corrected[f] && norm(corrected[f]) !== norm(entry[f])
+    );
+  }
+
   async function handleUpdate(entry) {
-    setAddresses(prev => prev.map(a => a.id === entry.id ? entry : a));
+    const { id, name, street, city, state, zip, country, label } = entry;
+    const fields = { name, street, city, state, zip, country, label, verified: "unverified", formatted_address: null, corrected_fields: null, verified_at: null };
+    setAddresses(prev => prev.map(a => a.id === id ? { ...a, ...fields } : a));
     try {
-      await updateAddress(entry);
+      await updateAddress(id, fields);
     } catch (err) {
       setError("Update failed: " + err.message);
+    }
+  }
+
+  async function handlePatchEntry(id, patch) {
+    setAddresses(prev => prev.map(a => a.id === id ? { ...a, ...patch } : a));
+    try {
+      await updateAddress(id, patch);
+    } catch (err) {
+      setError("Update failed: " + err.message);
+    }
+  }
+
+  async function handleVerify(id) {
+    setVerifyingIds(prev => new Set([...prev, id]));
+    try {
+      const entry = addresses.find(a => a.id === id);
+      if (!entry) return;
+      const result = await verifyAddress(entry);
+      const corrected = fieldsDiffer(entry, result.corrected) ? result.corrected : null;
+      const patch = {
+        verified: result.status,
+        formatted_address: result.formattedAddress,
+        corrected_fields: corrected,
+        verified_at: new Date().toISOString(),
+      };
+      setAddresses(prev => prev.map(a => a.id === id ? { ...a, ...patch } : a));
+      await updateAddress(id, patch);
+    } catch (err) {
+      setError("Verification failed: " + err.message);
+    } finally {
+      setVerifyingIds(prev => { const s = new Set(prev); s.delete(id); return s; });
+    }
+  }
+
+  async function handleVerifyAll() {
+    setVerifyingAll(true);
+    try {
+      await Promise.all(addresses.map(a => handleVerify(a.id)));
+    } finally {
+      setVerifyingAll(false);
     }
   }
 
@@ -313,6 +366,15 @@ export default function App() {
             {saving ? "Saving…" : savedMsg ? "Saved ✓" : "Save All"}
           </button>
         )}
+        {addresses.length > 0 && (
+          <button
+            onClick={handleVerifyAll}
+            disabled={verifyingAll || verifyingIds.size > 0}
+            style={btnStyle("#2980b9")}
+          >
+            {verifyingAll ? "Verifying…" : "Verify All"}
+          </button>
+        )}
       </div>
 
       {manualOpen && (
@@ -334,6 +396,9 @@ export default function App() {
             entry={entry}
             onDelete={handleDelete}
             onUpdate={handleUpdate}
+            onVerify={handleVerify}
+            onPatch={handlePatchEntry}
+            verifying={verifyingIds.has(entry.id)}
           />
         ))}
       </div>
