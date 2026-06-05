@@ -293,38 +293,125 @@ export default function App() {
     el.click();
   }
 
-  function handleExportDoc() {
-    const entries = filtered;
-    const cells = entries.map(a => {
-      const lines = [a.name];
+  async function handleExportDoc() {
+    const { jsPDF } = await import("jspdf");
+    const title = selectedTag || "Addresses";
+
+    // ── Page geometry (all inches, measured from source PDF at 300 DPI) ──────
+    //   top margin    1.000"  (first text top at 1.0" from page edge)
+    //   L/R margin    0.625"  (col 1 text starts at 0.625" from left)
+    //   bottom margin 0.500"
+    //   col slots     2.625" | 2.625" | 2.000"  (sum = 7.25" usable)
+    //   col text starts at:  0.625"  |  3.250"  |  5.875"
+    //   row height    1.000" fixed  (3 × 12pt lines = 0.500" text + 0.500" gap)
+    //   font          Times-Roman 12pt, single-spaced (line height = 12/72 = 0.1667")
+    //   cap height    0.662 × 12pt / 72 = 0.110"  (baseline offset from text top)
+    const PAGE_W = 8.5, PAGE_H = 11.0;
+    const MT = 1.0, ML = 0.625, MB = 0.5;
+    // Left edge of each column slot (for centering calculations)
+    const COL_X = [ML, ML + 2.625, ML + 5.25];   // [0.625, 3.250, 5.875]
+    // Center x of each column slot — text is centered within the slot
+    const COL_CX = [ML + 1.3125, ML + 3.9375, ML + 6.25]; // [1.9375, 4.5625, 6.875]
+    const ROW_H  = 1.0;
+    const FONT_PT = 12;
+    const LINE_H  = FONT_PT / 72;                 // 0.1667" between baselines
+    const CAP_H   = (FONT_PT * 0.662) / 72;       // 0.110" — Times-Roman cap height
+
+    const doc = new jsPDF({ orientation: "portrait", unit: "in", format: [PAGE_W, PAGE_H] });
+    doc.setFont("times", "normal");
+    doc.setFontSize(FONT_PT);
+
+    // rowBase = baseline y of the first text line in the current grid row
+    let rowBase = MT + CAP_H;
+
+    for (let i = 0; i < filtered.length; i += 3) {
+      if (i > 0 && rowBase > PAGE_H - MB) {
+        doc.addPage([PAGE_W, PAGE_H]);
+        rowBase = MT + CAP_H;
+      }
+
+      for (let col = 0; col < 3; col++) {
+        const a = filtered[i + col];
+        if (!a) continue;
+        const cx = COL_CX[col];
+        let y = rowBase;
+
+        doc.text(a.name || "", cx, y, { align: "center" });
+
+        if (a.street) {
+          y += LINE_H;
+          doc.text(a.street, cx, y, { align: "center" });
+        }
+
+        const cityLine = [a.city, a.state].filter(Boolean).join(", ") + (a.zip ? " " + a.zip : "");
+        if (cityLine.trim()) {
+          y += LINE_H;
+          doc.text(cityLine, cx, y, { align: "center" });
+        }
+      }
+
+      rowBase += ROW_H;
+    }
+
+    doc.save(`${title}.pdf`);
+  }
+
+  async function handleExportLabels() {
+    const { jsPDF } = await import("jspdf");
+    const title = selectedTag || "Addresses";
+
+    // ── Staples 2.625" × 1" 30-up label sheet (measured from template PDF at 300 DPI) ──
+    //   top margin   0.500"  (row 1 top at 150px/300dpi)
+    //   left margin  0.150"  (col 1 left at 45px/300dpi)
+    //   label width  2.623"  (832-45 px / 300dpi) ≈ 2.625"
+    //   label height 1.000"  (300px / 300dpi)
+    //   col gap      0.160"  (880-832 px / 300dpi)
+    //   row gap      0.000"  (rows share borders, no vertical gap)
+    //   cols × rows  3 × 10 = 30 labels per page
+    //   col centers  1.4617" | 4.2450" | 7.0283"
+    const PAGE_W = 8.5, PAGE_H = 11.0;
+    const LABEL_W = 2.6233, LABEL_H = 1.0;
+    const LEFT   = 0.150, TOP = 0.500, COL_GAP = 0.160;
+
+    const COL_CX = [
+      LEFT + LABEL_W / 2,                          // 1.4617"
+      LEFT + LABEL_W + COL_GAP + LABEL_W / 2,      // 4.2450"
+      LEFT + 2 * (LABEL_W + COL_GAP) + LABEL_W / 2, // 7.0283"
+    ];
+
+    // 9pt Times-Roman fits 3 address lines comfortably in a 1" label
+    const FONT_PT = 9;
+    const LINE_H  = FONT_PT / 72;               // 0.125" between baselines
+    const CAP_H   = (FONT_PT * 0.662) / 72;     // 0.083" — Times-Roman cap height
+
+    const doc = new jsPDF({ orientation: "portrait", unit: "in", format: [PAGE_W, PAGE_H] });
+    doc.setFont("times", "normal");
+    doc.setFontSize(FONT_PT);
+
+    filtered.forEach((a, idx) => {
+      const posOnPage = idx % 30;
+      if (posOnPage === 0 && idx > 0) doc.addPage([PAGE_W, PAGE_H]);
+
+      const row = Math.floor(posOnPage / 3);
+      const col = posOnPage % 3;
+      const labelTop = TOP + row * LABEL_H;
+      const cx = COL_CX[col];
+
+      const lines = [a.name || ""];
       if (a.street) lines.push(a.street);
       const cityLine = [a.city, a.state].filter(Boolean).join(", ") + (a.zip ? " " + a.zip : "");
       if (cityLine.trim()) lines.push(cityLine);
-      return `<div class="cell">${lines.map(l => `<div>${l}</div>`).join("")}</div>`;
+
+      // Vertically center the text block within the label
+      const blockH = (lines.length - 1) * LINE_H + CAP_H;
+      const firstBaseline = labelTop + (LABEL_H - blockH) / 2 + CAP_H;
+
+      lines.forEach((line, i) => {
+        doc.text(line, cx, firstBaseline + i * LINE_H, { align: "center" });
+      });
     });
 
-    const title = selectedTag ? selectedTag : "Addresses";
-    const html = `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<title>${title}</title>
-<style>
-  body { font-family: Arial, sans-serif; font-size: 11pt; margin: 0.75in; }
-  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px 12px; }
-  .cell { padding: 4px 0; line-height: 1.5; }
-  @media print { body { margin: 0.6in; } }
-</style>
-</head>
-<body>
-<div class="grid">${cells.join("\n")}</div>
-</body>
-</html>`;
-
-    const el = document.createElement("a");
-    el.href = "data:text/html;charset=utf-8," + encodeURIComponent(html);
-    el.download = selectedTag ? `${selectedTag}.html` : "addresses.html";
-    el.click();
+    doc.save(`${title}-labels.pdf`);
   }
 
   async function handleSaveAll() {
@@ -427,6 +514,11 @@ export default function App() {
         {addresses.length > 0 && (
           <button onClick={handleExportDoc} style={btnStyle("#888")}>
             {selectedTag ? `Export "${selectedTag}" Doc` : "Export Doc"}
+          </button>
+        )}
+        {addresses.length > 0 && (
+          <button onClick={handleExportLabels} style={btnStyle("#888")}>
+            {selectedTag ? `Export "${selectedTag}" Labels` : "Export Labels"}
           </button>
         )}
         {addresses.length > 0 && (
