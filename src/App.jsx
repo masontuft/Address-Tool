@@ -23,6 +23,22 @@ function btnStyle(bg) {
   };
 }
 
+const KEEP_BOTH_KEY = "keepBothMemory";
+
+function pairKey(a, b) {
+  const norm = s => (s || "").toLowerCase().replace(/\s+/g, " ").trim();
+  return [norm(a.name), norm(b.name)].sort().join("|");
+}
+
+function loadKeepBothMemory() {
+  try { return new Set(JSON.parse(localStorage.getItem(KEEP_BOTH_KEY) || "[]")); }
+  catch { return new Set(); }
+}
+
+function saveKeepBothMemory(mem) {
+  localStorage.setItem(KEEP_BOTH_KEY, JSON.stringify([...mem]));
+}
+
 export default function App() {
   const [addresses, setAddresses] = useState([]);
   const [search, setSearch] = useState("");
@@ -35,8 +51,10 @@ export default function App() {
   const [savedMsg, setSavedMsg] = useState(false);
   const [verifyingIds, setVerifyingIds] = useState(new Set());
   const [verifyingAll, setVerifyingAll] = useState(false);
+  const [selectedTag, setSelectedTag] = useState(null);
   // pendingRef stores the combined list and which ids are newly incoming (not yet in DB)
   const pendingRef = useRef({ allAddresses: [], incomingIds: new Set() });
+  const keepBothMemory = useRef(loadKeepBothMemory());
 
   useEffect(() => {
     loadAddresses()
@@ -67,7 +85,10 @@ export default function App() {
     const autoRemove = new Set(
       dups.filter(d => isExactMatch(d.existing, d.incoming)).map(d => d.incoming.id)
     );
-    const manualDups = dups.filter(d => !isExactMatch(d.existing, d.incoming));
+    const nonExact = dups.filter(d => !isExactMatch(d.existing, d.incoming));
+    // Auto-resolve pairs the user previously chose to keep both
+    const manualDups = nonExact.filter(d => !keepBothMemory.current.has(pairKey(d.existing, d.incoming)));
+
     const filteredCombined = combined.filter(a => !autoRemove.has(a.id));
     const filteredIncoming = incoming.filter(a => !autoRemove.has(a.id));
 
@@ -96,8 +117,8 @@ export default function App() {
   }
 
   async function handleUpdate(entry) {
-    const { id, name, street, city, state, zip, country, label } = entry;
-    const fields = { name, street, city, state, zip, country, label, verified: "unverified", formatted_address: null, corrected_fields: null, verified_at: null };
+    const { id, name, street, city, state, zip, country, label, tags } = entry;
+    const fields = { name, street, city, state, zip, country, label, tags: tags || [], verified: "unverified", formatted_address: null, corrected_fields: null, verified_at: null };
     setAddresses(prev => prev.map(a => a.id === id ? { ...a, ...fields } : a));
     try {
       await updateAddress(id, fields);
@@ -155,6 +176,13 @@ export default function App() {
       const choice = decisions[i];
       if (choice === "existing") toRemove.add(conflict.incoming.id);
       else if (choice === "incoming") toRemove.add(conflict.existing.id);
+      else if (choice === "both") {
+        const key = pairKey(conflict.existing, conflict.incoming);
+        if (!keepBothMemory.current.has(key)) {
+          keepBothMemory.current.add(key);
+          saveKeepBothMemory(keepBothMemory.current);
+        }
+      }
     });
 
     const seen = new Set();
@@ -253,16 +281,50 @@ export default function App() {
   }
 
   function handleExport() {
-    const header = "name,label,street,city,state,zip,country";
+    const header = "name,label,street,city,state,zip,country,tags";
     const esc = v => `"${(v || "").replace(/"/g, '""')}"`;
-    const rows = addresses.map(a =>
-      [a.name, a.label, a.street, a.city, a.state, a.zip, a.country].map(esc).join(",")
+    const rows = filtered.map(a =>
+      [a.name, a.label, a.street, a.city, a.state, a.zip, a.country, (a.tags || []).join(";")].map(esc).join(",")
     );
     const csv = [header, ...rows].join("\n");
-    const a = document.createElement("a");
-    a.href = "data:text/csv;charset=utf-8," + encodeURIComponent(csv);
-    a.download = "addresses.csv";
-    a.click();
+    const el = document.createElement("a");
+    el.href = "data:text/csv;charset=utf-8," + encodeURIComponent(csv);
+    el.download = selectedTag ? `${selectedTag}.csv` : "addresses.csv";
+    el.click();
+  }
+
+  function handleExportDoc() {
+    const entries = filtered;
+    const cells = entries.map(a => {
+      const lines = [a.name];
+      if (a.street) lines.push(a.street);
+      const cityLine = [a.city, a.state].filter(Boolean).join(", ") + (a.zip ? " " + a.zip : "");
+      if (cityLine.trim()) lines.push(cityLine);
+      return `<div class="cell">${lines.map(l => `<div>${l}</div>`).join("")}</div>`;
+    });
+
+    const title = selectedTag ? selectedTag : "Addresses";
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>${title}</title>
+<style>
+  body { font-family: Arial, sans-serif; font-size: 11pt; margin: 0.75in; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px 12px; }
+  .cell { padding: 4px 0; line-height: 1.5; }
+  @media print { body { margin: 0.6in; } }
+</style>
+</head>
+<body>
+<div class="grid">${cells.join("\n")}</div>
+</body>
+</html>`;
+
+    const el = document.createElement("a");
+    el.href = "data:text/html;charset=utf-8," + encodeURIComponent(html);
+    el.download = selectedTag ? `${selectedTag}.html` : "addresses.html";
+    el.click();
   }
 
   async function handleSaveAll() {
@@ -284,12 +346,15 @@ export default function App() {
     setManualOpen(false);
   }
 
-  const filtered = search.trim()
-    ? addresses.filter(a =>
-        [a.name, a.street, a.city, a.state, a.zip, a.country]
-          .some(v => (v || "").toLowerCase().includes(search.toLowerCase()))
-      )
-    : addresses;
+  const allTags = [...new Set(addresses.flatMap(a => a.tags || []))].sort();
+  const tagCounts = Object.fromEntries(allTags.map(tag => [tag, addresses.filter(a => (a.tags || []).includes(tag)).length]));
+
+  const filtered = addresses.filter(a => {
+    const matchesSearch = !search.trim() || [a.name, a.street, a.city, a.state, a.zip, a.country]
+      .some(v => (v || "").toLowerCase().includes(search.toLowerCase()));
+    const matchesTag = !selectedTag || (a.tags || []).includes(selectedTag);
+    return matchesSearch && matchesTag;
+  });
 
   if (loading) {
     return (
@@ -355,7 +420,14 @@ export default function App() {
           {manualOpen ? "Cancel" : "Add Manually"}
         </button>
         {addresses.length > 0 && (
-          <button onClick={handleExport} style={btnStyle("#888")}>Export CSV</button>
+          <button onClick={handleExport} style={btnStyle("#888")}>
+            {selectedTag ? `Export "${selectedTag}"` : "Export CSV"}
+          </button>
+        )}
+        {addresses.length > 0 && (
+          <button onClick={handleExportDoc} style={btnStyle("#888")}>
+            {selectedTag ? `Export "${selectedTag}" Doc` : "Export Doc"}
+          </button>
         )}
         {addresses.length > 0 && (
           <button
@@ -381,6 +453,38 @@ export default function App() {
         <ManualForm onSave={handleManualSave} onCancel={() => setManualOpen(false)} />
       )}
 
+      {allTags.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 16, alignItems: "center" }}>
+          <span style={{ fontSize: 12, color: "#aaa", marginRight: 2 }}>Groups:</span>
+          {allTags.map(tag => (
+            <button
+              key={tag}
+              onClick={() => setSelectedTag(t => t === tag ? null : tag)}
+              style={{
+                padding: "4px 12px",
+                borderRadius: 20,
+                border: `1px solid ${selectedTag === tag ? "#4f8ef7" : "#ddd"}`,
+                background: selectedTag === tag ? "#e8f0fe" : "#f5f5f5",
+                color: selectedTag === tag ? "#4f8ef7" : "#555",
+                cursor: "pointer",
+                fontSize: 12,
+                fontWeight: selectedTag === tag ? 600 : 400,
+              }}
+            >
+              {tag} <span style={{ opacity: 0.6, fontWeight: 400, marginLeft: 3 }}>{tagCounts[tag]}</span>
+            </button>
+          ))}
+          {selectedTag && (
+            <button
+              onClick={() => setSelectedTag(null)}
+              style={{ padding: "4px 8px", borderRadius: 20, border: "none", background: "none", color: "#aaa", cursor: "pointer", fontSize: 12 }}
+            >
+              Clear
+            </button>
+          )}
+        </div>
+      )}
+
       {filtered.length === 0 && (
         <div style={{ color: "#bbb", textAlign: "center", marginTop: 64, fontSize: 15 }}>
           {addresses.length === 0
@@ -399,6 +503,7 @@ export default function App() {
             onVerify={handleVerify}
             onPatch={handlePatchEntry}
             verifying={verifyingIds.has(entry.id)}
+            allTags={allTags}
           />
         ))}
       </div>

@@ -55,8 +55,8 @@ export default function ManualForm({ onSave, onCancel }) {
           <input style={inputStyle} value={form.label} onChange={e => set("label", e.target.value)} placeholder="e.g. company, family" />
         </div>
         <div style={{ gridColumn: "1 / -1" }}>
-          <label style={labelStyle}>Street *</label>
-          <input required style={inputStyle} value={form.street} onChange={e => set("street", e.target.value)} placeholder="123 Main St" />
+          <label style={labelStyle}>Street</label>
+          <input style={inputStyle} value={form.street} onChange={e => set("street", e.target.value)} placeholder="123 Main St" />
         </div>
         <div>
           <label style={labelStyle}>City</label>

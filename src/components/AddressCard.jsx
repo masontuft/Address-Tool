@@ -60,9 +60,11 @@ const inputStyle = {
   outline: "none",
 };
 
-export default function AddressCard({ entry, onDelete, onUpdate, onVerify, onPatch, verifying }) {
+export default function AddressCard({ entry, onDelete, onUpdate, onVerify, onPatch, verifying, allTags = [] }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({});
+  const [addingTag, setAddingTag] = useState(false);
+  const [tagInput, setTagInput] = useState("");
 
   function startEdit() {
     setForm({ ...entry });
@@ -77,6 +79,23 @@ export default function AddressCard({ entry, onDelete, onUpdate, onVerify, onPat
     onUpdate(form);
     setEditing(false);
   }
+
+  function handleRemoveTag(tag) {
+    onPatch(entry.id, { tags: (entry.tags || []).filter(t => t !== tag) });
+  }
+
+  function handleAddTag() {
+    const tag = tagInput.trim().toLowerCase();
+    setTagInput("");
+    setAddingTag(false);
+    if (!tag) return;
+    const newTags = [...new Set([...(entry.tags || []), tag])];
+    onPatch(entry.id, { tags: newTags });
+  }
+
+  const tagSuggestions = tagInput.trim()
+    ? allTags.filter(t => t.includes(tagInput.trim().toLowerCase()) && !(entry.tags || []).includes(t))
+    : allTags.filter(t => !(entry.tags || []).includes(t));
 
   const cardStyle = {
     border: "1px solid #e8e8e8",
@@ -170,6 +189,66 @@ export default function AddressCard({ entry, onDelete, onUpdate, onVerify, onPat
             <div style={{ fontWeight: 700, fontSize: 16 }}>{entry.name}</div>
             {entry.label && <div style={{ fontSize: 13, color: "#888" }}>{entry.label}</div>}
             <VerifiedBadge status={entry.verified} />
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 5, alignItems: "center" }}>
+              {(entry.tags || []).map(tag => (
+                <span key={tag} style={{
+                  display: "inline-flex", alignItems: "center", gap: 3,
+                  padding: "2px 8px", borderRadius: 12, background: "#e8f0fe", color: "#4f8ef7",
+                  fontSize: 11, fontWeight: 600,
+                }}>
+                  {tag}
+                  <button
+                    onClick={() => handleRemoveTag(tag)}
+                    style={{ background: "none", border: "none", cursor: "pointer", color: "#4f8ef7", fontSize: 13, lineHeight: 1, padding: 0, marginLeft: 1 }}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+              {addingTag ? (
+                <div style={{ position: "relative" }}>
+                  <input
+                    autoFocus
+                    value={tagInput}
+                    onChange={e => setTagInput(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === "Enter") handleAddTag();
+                      if (e.key === "Escape") { setAddingTag(false); setTagInput(""); }
+                    }}
+                    onBlur={() => setTimeout(handleAddTag, 150)}
+                    placeholder="tag name…"
+                    style={{ fontSize: 11, padding: "2px 7px", borderRadius: 6, border: "1px solid #4f8ef7", outline: "none", width: 88 }}
+                  />
+                  {tagSuggestions.length > 0 && (
+                    <div style={{
+                      position: "absolute", top: "100%", left: 0, zIndex: 10, marginTop: 2,
+                      background: "#fff", border: "1px solid #e0e0e0", borderRadius: 6,
+                      boxShadow: "0 2px 8px rgba(0,0,0,0.1)", minWidth: 120,
+                    }}>
+                      {tagSuggestions.slice(0, 6).map(t => (
+                        <div
+                          key={t}
+                          onMouseDown={e => { e.preventDefault(); setTagInput(t); setTimeout(() => { onPatch(entry.id, { tags: [...new Set([...(entry.tags || []), t])] }); setTagInput(""); setAddingTag(false); }, 0); }}
+                          style={{ padding: "5px 10px", fontSize: 12, cursor: "pointer", color: "#444" }}
+                          onMouseEnter={e => e.currentTarget.style.background = "#f0f4ff"}
+                          onMouseLeave={e => e.currentTarget.style.background = ""}
+                        >
+                          {t}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <button
+                  onClick={() => setAddingTag(true)}
+                  title="Add tag"
+                  style={{ background: "none", border: "1px dashed #ccc", borderRadius: 12, cursor: "pointer", fontSize: 11, color: "#bbb", padding: "2px 8px", lineHeight: 1.4 }}
+                >
+                  + tag
+                </button>
+              )}
+            </div>
           </div>
         </div>
         <div style={{ display: "flex", gap: 4, alignItems: "center" }}>

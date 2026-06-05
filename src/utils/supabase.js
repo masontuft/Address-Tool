@@ -17,8 +17,8 @@ export async function loadAddresses() {
 }
 
 export async function insertAddresses(entries) {
-  const rows = entries.map(({ id, name, street, city, state, zip, country, label }) => ({
-    id, name, street, city, state, zip, country, label,
+  const rows = entries.map(({ id, name, street, city, state, zip, country, label, tags }) => ({
+    id, name, street, city, state, zip, country, label, tags: tags || [],
   }));
   const { error } = await supabase.from(TABLE).insert(rows);
   if (error) throw error;
@@ -41,8 +41,8 @@ export async function updateAddress(id, fields) {
 }
 
 export async function upsertAllAddresses(entries) {
-  const rows = entries.map(({ id, name, street, city, state, zip, country, label }) => ({
-    id, name, street, city, state, zip, country, label,
+  const rows = entries.map(({ id, name, street, city, state, zip, country, label, tags }) => ({
+    id, name, street, city, state, zip, country, label, tags: tags || [],
   }));
   const { error } = await supabase.from(TABLE).upsert(rows, { onConflict: "id" });
   if (error) throw error;

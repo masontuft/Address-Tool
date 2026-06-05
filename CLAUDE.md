@@ -57,7 +57,8 @@ ALTER TABLE "Addresses"
   ADD COLUMN IF NOT EXISTS verified TEXT DEFAULT 'unverified',
   ADD COLUMN IF NOT EXISTS formatted_address TEXT,
   ADD COLUMN IF NOT EXISTS corrected_fields JSONB,
-  ADD COLUMN IF NOT EXISTS verified_at TIMESTAMPTZ;
+  ADD COLUMN IF NOT EXISTS verified_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS tags JSONB DEFAULT '[]';
 ```
 
 ## Environment Variables
